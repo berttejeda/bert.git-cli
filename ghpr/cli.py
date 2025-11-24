@@ -276,10 +276,13 @@ def create_command(
     draft: bool = typer.Option(False, "--draft", help="Create as draft PR"),
     label: Optional[List[str]] = typer.Option(None, "--label", help="Labels to add (can be used multiple times)"),
     proxy: Optional[str] = typer.Option(None, "--proxy", "-x", help="SOCKS5h proxy address"),
-    verify_tls: bool = typer.Option(True, "--verify-tls/--no-verify-tls", help="Enable/disable TLS verification"),
+    verify_tls: bool = typer.Option(True, "--verify-tls", help="Enable TLS verification (default: True)"),
+    no_verify_tls: bool = typer.Option(False, "--no-verify-tls", help="Disable TLS verification"),
     debug: bool = typer.Option(False, "--debug", help="Show API request details and equivalent curl command"),
 ) -> None:
     cfg = load_config(config)
+    # If --no-verify-tls is set, override verify_tls to False
+    final_verify_tls = False if no_verify_tls else verify_tls
     merged = merge_config_cli(
         cfg,
         cli_api_base=api_base,
@@ -287,7 +290,7 @@ def create_command(
         cli_owner=owner,
         cli_repo=repo,
         cli_proxy=proxy,
-        cli_verify_tls=verify_tls,
+        cli_verify_tls=final_verify_tls,
     )
     
     if not merged["owner"] or not merged["repo"]:
@@ -342,10 +345,13 @@ def approve_command(
     pr_number: int = typer.Option(..., "--pr-number", "-pr", help="Pull Request number"),
     comment: Optional[str] = typer.Option(None, "--comment", help="Optional approval comment"),
     proxy: Optional[str] = typer.Option(None, "--proxy", "-x", help="SOCKS5h proxy address"),
-    verify_tls: bool = typer.Option(True, "--verify-tls/--no-verify-tls", help="Enable/disable TLS verification"),
+    verify_tls: bool = typer.Option(True, "--verify-tls", help="Enable TLS verification (default: True)"),
+    no_verify_tls: bool = typer.Option(False, "--no-verify-tls", help="Disable TLS verification"),
     debug: bool = typer.Option(False, "--debug", help="Show API request details and equivalent curl command"),
 ) -> None:
     cfg = load_config(config)
+    # If --no-verify-tls is set, override verify_tls to False
+    final_verify_tls = False if no_verify_tls else verify_tls
     merged = merge_config_cli(
         cfg,
         cli_api_base=api_base,
@@ -353,7 +359,7 @@ def approve_command(
         cli_owner=owner,
         cli_repo=repo,
         cli_proxy=proxy,
-        cli_verify_tls=verify_tls,
+        cli_verify_tls=final_verify_tls,
     )
     
     if not merged["owner"] or not merged["repo"]:
@@ -400,10 +406,13 @@ def comment_command(
     comment: str = typer.Option(..., "--comment", help="Comment text"),
     comment_type: str = typer.Option("review", "--type", help="Comment type: 'review' or 'issue'"),
     proxy: Optional[str] = typer.Option(None, "--proxy", "-x", help="SOCKS5h proxy address"),
-    verify_tls: bool = typer.Option(True, "--verify-tls/--no-verify-tls", help="Enable/disable TLS verification"),
+    verify_tls: bool = typer.Option(True, "--verify-tls", help="Enable TLS verification (default: True)"),
+    no_verify_tls: bool = typer.Option(False, "--no-verify-tls", help="Disable TLS verification"),
     debug: bool = typer.Option(False, "--debug", help="Show API request details and equivalent curl command"),
 ) -> None:
     cfg = load_config(config)
+    # If --no-verify-tls is set, override verify_tls to False
+    final_verify_tls = False if no_verify_tls else verify_tls
     merged = merge_config_cli(
         cfg,
         cli_api_base=api_base,
@@ -411,7 +420,7 @@ def comment_command(
         cli_owner=owner,
         cli_repo=repo,
         cli_proxy=proxy,
-        cli_verify_tls=verify_tls,
+        cli_verify_tls=final_verify_tls,
     )
     
     if not merged["owner"] or not merged["repo"]:

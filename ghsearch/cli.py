@@ -654,15 +654,19 @@ def repos_command(
     language: Optional[str] = typer.Option(None, "--language", help="Language filter"),
     sort_by: Optional[str] = typer.Option(None, "--sort-by", help="Sort by field"),
     sort_direction: str = typer.Option("desc", "--sort-direction", help="Sort direction"),
-    group_by_language_flag: Optional[bool] = typer.Option(
-        None,
-        "--group-by-language/--no-group-by-language",
-        help="Group results by language",
-    ),
+    group_by_language: bool = typer.Option(False, "--group-by-language", help="Group results by language"),
+    no_group_by_language: bool = typer.Option(False, "--no-group-by-language", help="Do not group results by language"),
     top_n: Optional[int] = typer.Option(None, "--top-n", help="Limit results to top N"),
     debug: bool = typer.Option(False, "--debug", help="Show API request details and equivalent curl command"),
 ) -> None:
     cfg = load_config(config)
+    # Determine group_by_language value: --no-group-by-language takes precedence
+    if no_group_by_language:
+        group_by_language_value: Optional[bool] = False
+    elif group_by_language:
+        group_by_language_value = True
+    else:
+        group_by_language_value = None
     merged = merge_repos_config_cli(
         cfg,
         cli_api_base=api_base,
@@ -674,7 +678,7 @@ def repos_command(
         language=language,
         sort_by=sort_by,
         sort_direction=sort_direction,
-        group_by_language=group_by_language_flag,
+        group_by_language=group_by_language_value,
         top_n=top_n,
     )
     valid, message = validate_sort_options(merged["sort_by"], merged["sort_direction"])
