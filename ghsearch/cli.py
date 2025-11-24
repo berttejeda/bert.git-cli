@@ -177,6 +177,7 @@ def merge_repos_config_cli(
     sort_direction: Optional[str],
     group_by_language: Optional[bool],
     top_n: Optional[int],
+    cli_verify_tls: Optional[bool],
 ) -> Dict[str, Any]:
     subcfg = config.get("repos", {}) if isinstance(config.get("repos"), dict) else {}
     merged: Dict[str, Any] = {}
@@ -193,6 +194,7 @@ def merge_repos_config_cli(
         group_by_language if group_by_language is not None else subcfg.get("group_by_language", False)
     )
     merged["top_n"] = top_n if top_n is not None else subcfg.get("top_n")
+    merged["verify_tls"] = cli_verify_tls if cli_verify_tls is not None else subcfg.get("verify_tls", True)
     return merged
 
 
@@ -207,6 +209,7 @@ def merge_code_config_cli(
     repo: Optional[str],
     language: Optional[str],
     path: Optional[str],
+    cli_verify_tls: Optional[bool],
 ) -> Dict[str, Any]:
     subcfg = config.get("code", {}) if isinstance(config.get("code"), dict) else {}
     merged: Dict[str, Any] = {}
@@ -218,6 +221,7 @@ def merge_code_config_cli(
     merged["repo"] = repo or subcfg.get("repo")
     merged["language"] = language or subcfg.get("language")
     merged["path"] = path or subcfg.get("path")
+    merged["verify_tls"] = cli_verify_tls if cli_verify_tls is not None else subcfg.get("verify_tls", True)
     return merged
 
 
@@ -233,6 +237,7 @@ def merge_commits_config_cli(
     author: Optional[str],
     committer: Optional[str],
     stats: Optional[bool],
+    cli_verify_tls: Optional[bool],
 ) -> Dict[str, Any]:
     subcfg = config.get("commits", {}) if isinstance(config.get("commits"), dict) else {}
     merged: Dict[str, Any] = {}
@@ -245,6 +250,7 @@ def merge_commits_config_cli(
     merged["author"] = author or subcfg.get("author")
     merged["committer"] = committer or subcfg.get("committer")
     merged["stats"] = stats if stats is not None else subcfg.get("stats", False)
+    merged["verify_tls"] = cli_verify_tls if cli_verify_tls is not None else subcfg.get("verify_tls", True)
     return merged
 
 
@@ -256,6 +262,7 @@ def search_repositories(
     max_pages: int = 3,
     timeout: int = 10,
     debug: bool = False,
+    verify: bool = True,
 ) -> Dict[str, Any]:
     url = api_base.rstrip("/") + "/search/repositories"
     items: List[Dict[str, Any]] = []
@@ -267,7 +274,7 @@ def search_repositories(
         if debug and page == 1:
             print_debug_info("GET", url, headers, params=params, debug=debug)
         try:
-            resp = session.get(url, headers=headers, params=params, timeout=timeout)
+            resp = session.get(url, headers=headers, params=params, timeout=timeout, verify=verify)
         except requests.RequestException as exc:
             print(f"[ghsearch] Request error: {exc}", file=sys.stderr)
             break
@@ -383,6 +390,7 @@ async def search_code_async(
     language: Optional[str] = None,
     path: Optional[str] = None,
     debug: bool = False,
+    verify: bool = True,
 ) -> Dict[str, Any]:
     url = api_base.rstrip("/") + "/search/code"
     final_query = query
@@ -395,7 +403,7 @@ async def search_code_async(
     items: List[Dict[str, Any]] = []
     total_count = None
     incomplete_results = False
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    async with httpx.AsyncClient(timeout=timeout, verify=verify) as client:
         for page in range(1, max_pages + 1):
             params = {"q": final_query, "per_page": per_page, "page": page}
             if debug and page == 1:
@@ -438,6 +446,7 @@ async def search_commits_async(
     author: Optional[str] = None,
     committer: Optional[str] = None,
     debug: bool = False,
+    verify: bool = True,
 ) -> Dict[str, Any]:
     url = api_base.rstrip("/") + "/search/commits"
     final_query = query
@@ -450,7 +459,7 @@ async def search_commits_async(
     items: List[Dict[str, Any]] = []
     total_count = None
     incomplete_results = False
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    async with httpx.AsyncClient(timeout=timeout, verify=verify) as client:
         for page in range(1, max_pages + 1):
             params = {"q": final_query, "per_page": per_page, "page": page}
             if debug and page == 1:
@@ -658,6 +667,8 @@ def repos_command(
     no_group_by_language: bool = typer.Option(False, "--no-group-by-language", help="Do not group results by language"),
     top_n: Optional[int] = typer.Option(None, "--top-n", help="Limit results to top N"),
     debug: bool = typer.Option(False, "--debug", help="Show API request details and equivalent curl command"),
+    verify_tls: bool = typer.Option(True, "--verify-tls", help="Enable TLS verification (default: True)"),
+    no_verify_tls: bool = typer.Option(False, "--no-verify-tls", help="Disable TLS verification"),
 ) -> None:
     cfg = load_config(config)
     # Determine group_by_language value: --no-group-by-language takes precedence
@@ -667,6 +678,8 @@ def repos_command(
         group_by_language_value = True
     else:
         group_by_language_value = None
+    # If --no-verify-tls is set, override verify_tls to False
+    final_verify_tls = False if no_verify_tls else verify_tls
     merged = merge_repos_config_cli(
         cfg,
         cli_api_base=api_base,
@@ -680,6 +693,7 @@ def repos_command(
         sort_direction=sort_direction,
         group_by_language=group_by_language_value,
         top_n=top_n,
+        cli_verify_tls=final_verify_tls,
     )
     valid, message = validate_sort_options(merged["sort_by"], merged["sort_direction"])
     if not valid:
@@ -693,6 +707,7 @@ def repos_command(
         merged["per_page"],
         merged["max_pages"],
         debug=debug,
+        verify=merged["verify_tls"],
     )
     simplified = simplify_repos(raw["items"])
     filtered = apply_filters(simplified, merged["min_stars"], merged["language"])
@@ -723,8 +738,12 @@ def code_command(
     language: Optional[str] = typer.Option(None, "--language", help="Language filter"),
     path: Optional[str] = typer.Option(None, "--path", help="Path filter"),
     debug: bool = typer.Option(False, "--debug", help="Show API request details and equivalent curl command"),
+    verify_tls: bool = typer.Option(True, "--verify-tls", help="Enable TLS verification (default: True)"),
+    no_verify_tls: bool = typer.Option(False, "--no-verify-tls", help="Disable TLS verification"),
 ) -> None:
     cfg = load_config(config)
+    # If --no-verify-tls is set, override verify_tls to False
+    final_verify_tls = False if no_verify_tls else verify_tls
     merged = merge_code_config_cli(
         cfg,
         cli_api_base=api_base,
@@ -735,6 +754,7 @@ def code_command(
         repo=repo,
         language=language,
         path=path,
+        cli_verify_tls=final_verify_tls,
     )
     headers = build_headers(merged["token"])
     raw = asyncio.run(
@@ -748,6 +768,7 @@ def code_command(
             language=merged["language"],
             path=merged["path"],
             debug=debug,
+            verify=merged["verify_tls"],
         )
     )
     simplified = simplify_code_results(raw["items"])
@@ -792,8 +813,12 @@ def commits_command(
     committer: Optional[str] = typer.Option(None, "--committer", help="Committer filter (username or email)"),
     stats: bool = typer.Option(False, "--stats", help="Output repository statistics instead of individual commits"),
     debug: bool = typer.Option(False, "--debug", help="Show API request details and equivalent curl command"),
+    verify_tls: bool = typer.Option(True, "--verify-tls", help="Enable TLS verification (default: True)"),
+    no_verify_tls: bool = typer.Option(False, "--no-verify-tls", help="Disable TLS verification"),
 ) -> None:
     cfg = load_config(config)
+    # If --no-verify-tls is set, override verify_tls to False
+    final_verify_tls = False if no_verify_tls else verify_tls
     merged = merge_commits_config_cli(
         cfg,
         cli_api_base=api_base,
@@ -805,6 +830,7 @@ def commits_command(
         author=author,
         committer=committer,
         stats=stats,
+        cli_verify_tls=final_verify_tls,
     )
     headers = build_headers(merged["token"])
     raw = asyncio.run(
@@ -818,6 +844,7 @@ def commits_command(
             author=merged["author"],
             committer=merged["committer"],
             debug=debug,
+            verify=merged["verify_tls"],
         )
     )
     simplified = simplify_commits_results(raw["items"])
