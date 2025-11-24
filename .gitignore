@@ -91,3 +91,6 @@ ENV/
 
 # Rope project settings
 .ropeproject
+
+#pyproject.toml history files
+.history
