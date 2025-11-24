@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ghsearch"
+version = "0.1.0"
+description = "CLI for searching GitHub repositories and code with YAML reports."
+requires-python = ">=3.9"
+authors = [{ name = "Example Author", email = "author@example.com" }]
+dependencies = [
+    "requests>=2.31.0",
+    "httpx>=0.26.0",
+    "PyYAML>=6.0.0",
+    "typer[all]>=0.9.0",
+]
+
+[project.scripts]
+ghsearch = "ghsearch.cli:main"
+
+
