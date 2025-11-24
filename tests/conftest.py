@@ -94,9 +94,13 @@ def mock_requests_post():
 
 @pytest.fixture
 def env_vars(monkeypatch):
-    """Fixture to set environment variables."""
+    """Fixture to set or delete environment variables."""
     def _set_env(**kwargs):
         for key, value in kwargs.items():
-            monkeypatch.setenv(key, value)
+            if value is None:
+                # Delete the environment variable if it exists
+                monkeypatch.delenv(key, raising=False)
+            else:
+                monkeypatch.setenv(key, value)
     return _set_env
 

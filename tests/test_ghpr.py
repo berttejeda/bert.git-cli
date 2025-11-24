@@ -76,10 +76,11 @@ class TestResolveApiBase:
         result = resolve_api_base(None, None)
         assert result == "https://github.company.com/api/v3"
     
-    def test_default_api_base(self, env_vars):
+    def test_default_api_base(self, env_vars, monkeypatch):
         """Should default to GitHub API base."""
+        # Clear all env vars that could provide an API base
         for key in ["GHPR_API_BASE", "GHE_URL"]:
-            env_vars(**{key: None})
+            monkeypatch.delenv(key, raising=False)
         assert resolve_api_base(None, None) == "https://api.github.com"
 
 

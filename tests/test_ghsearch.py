@@ -50,11 +50,11 @@ class TestResolveAuthToken:
         env_vars(GITHUB_TOKEN="github_token")
         assert resolve_auth_token(None, None) == "github_token"
     
-    def test_returns_none_when_no_token(self, env_vars):
+    def test_returns_none_when_no_token(self, env_vars, monkeypatch):
         """Should return None when no token is available."""
-        # Clear all env vars
+        # Clear all env vars that could provide a token
         for key in ["GHSEARCH_TOKEN", "GITHUB_TOKEN"]:
-            env_vars(**{key: None})
+            monkeypatch.delenv(key, raising=False)
         assert resolve_auth_token(None, None) is None
 
 
@@ -74,10 +74,11 @@ class TestResolveApiBase:
         env_vars(GHSEARCH_API_BASE="env_base")
         assert resolve_api_base(None, None) == "env_base"
     
-    def test_default_api_base(self, env_vars):
+    def test_default_api_base(self, env_vars, monkeypatch):
         """Should default to GitHub API base."""
+        # Clear all env vars that could provide an API base
         for key in ["GHSEARCH_API_BASE"]:
-            env_vars(**{key: None})
+            monkeypatch.delenv(key, raising=False)
         assert resolve_api_base(None, None) == "https://api.github.com"
 
 
