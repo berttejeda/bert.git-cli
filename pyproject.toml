@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "bt-ghtools"
+name = "bt-ghcli"
 version = "0.1.0"
 description = "CLI for interacting with the GitHub API"
 requires-python = ">=3.9"
