@@ -2,14 +2,93 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlencode
 
 import requests
 import typer
 
 app = typer.Typer(help="GitHub / GitHub Enterprise Pull Request management CLI tool")
+
+
+def print_debug_info(
+    method: str,
+    url: str,
+    headers: Dict[str, str],
+    params: Optional[Dict[str, Any]] = None,
+    json_data: Optional[Dict[str, Any]] = None,
+    debug: bool = False,
+) -> None:
+    """
+    Print debug information about the API request and generate equivalent curl command.
+    """
+    if not debug:
+        return
+    
+    print("\n" + "=" * 80, file=sys.stderr)
+    print("DEBUG: API Request Details", file=sys.stderr)
+    print("=" * 80, file=sys.stderr)
+    print(f"Method: {method}", file=sys.stderr)
+    print(f"URL: {url}", file=sys.stderr)
+    
+    if params:
+        full_url = f"{url}?{urlencode(params)}"
+        print(f"Full URL: {full_url}", file=sys.stderr)
+    else:
+        full_url = url
+    
+    print("\nHeaders:", file=sys.stderr)
+    sanitized_headers = {}
+    for key, value in headers.items():
+        if key.lower() == "authorization":
+            # Show only first few chars of token for security
+            if value.startswith("Bearer "):
+                token = value[7:]
+                sanitized_value = f"Bearer {token[:8]}..." if len(token) > 8 else value
+            else:
+                sanitized_value = value[:20] + "..." if len(value) > 20 else value
+            print(f"  {key}: {sanitized_value}", file=sys.stderr)
+            sanitized_headers[key] = sanitized_value
+        else:
+            print(f"  {key}: {value}", file=sys.stderr)
+            sanitized_headers[key] = value
+    
+    if json_data:
+        print("\nRequest Body (JSON):", file=sys.stderr)
+        print(json.dumps(json_data, indent=2), file=sys.stderr)
+    
+    if params:
+        print("\nQuery Parameters:", file=sys.stderr)
+        for key, value in params.items():
+            print(f"  {key}: {value}", file=sys.stderr)
+    
+    # Generate curl command
+    print("\n" + "-" * 80, file=sys.stderr)
+    print("Equivalent curl command:", file=sys.stderr)
+    print("-" * 80, file=sys.stderr)
+    
+    curl_parts = ["curl", "-X", method]
+    
+    # Add headers
+    for key, value in headers.items():
+        curl_parts.extend(["-H", f"{key}: {value}"])
+    
+    # Add JSON data
+    if json_data:
+        json_str = json.dumps(json_data)
+        curl_parts.extend(["-d", json_str])
+        curl_parts.append("-H")
+        curl_parts.append("Content-Type: application/json")
+    
+    # Add URL with params
+    curl_parts.append(shlex.quote(full_url))
+    
+    curl_cmd = " \\\n  ".join(curl_parts)
+    print(curl_cmd, file=sys.stderr)
+    print("=" * 80 + "\n", file=sys.stderr)
 
 
 def resolve_auth_token(cli_token: Optional[str], config_token: Optional[str]) -> Optional[str]:
@@ -133,11 +212,14 @@ def make_request(
     json_data: Optional[Dict[str, Any]] = None,
     proxies: Optional[Dict[str, str]] = None,
     verify: bool = True,
+    debug: bool = False,
 ) -> requests.Response:
     """
     Make an HTTP request with error handling.
     """
     proxies = proxies or {}
+    if debug:
+        print_debug_info(method, url, headers, json_data=json_data, debug=debug)
     response = None
     try:
         response = requests.request(
@@ -195,6 +277,7 @@ def create_command(
     label: Optional[List[str]] = typer.Option(None, "--label", help="Labels to add (can be used multiple times)"),
     proxy: Optional[str] = typer.Option(None, "--proxy", "-x", help="SOCKS5h proxy address"),
     verify_tls: bool = typer.Option(True, "--verify-tls/--no-verify-tls", help="Enable/disable TLS verification"),
+    debug: bool = typer.Option(False, "--debug", help="Show API request details and equivalent curl command"),
 ) -> None:
     cfg = load_config(config)
     merged = merge_config_cli(
@@ -232,7 +315,7 @@ def create_command(
         payload["labels"] = label
     
     typer.echo(f"Creating PR: {title} ({head} -> {base})")
-    response = make_request("POST", api_url, headers, json_data=payload, proxies=proxies, verify=merged["verify_tls"])
+    response = make_request("POST", api_url, headers, json_data=payload, proxies=proxies, verify=merged["verify_tls"], debug=debug)
     
     result = response.json()
     typer.echo(f"✓ Pull Request created successfully!")
@@ -260,6 +343,7 @@ def approve_command(
     comment: Optional[str] = typer.Option(None, "--comment", help="Optional approval comment"),
     proxy: Optional[str] = typer.Option(None, "--proxy", "-x", help="SOCKS5h proxy address"),
     verify_tls: bool = typer.Option(True, "--verify-tls/--no-verify-tls", help="Enable/disable TLS verification"),
+    debug: bool = typer.Option(False, "--debug", help="Show API request details and equivalent curl command"),
 ) -> None:
     cfg = load_config(config)
     merged = merge_config_cli(
@@ -289,7 +373,7 @@ def approve_command(
         payload["body"] = comment
     
     typer.echo(f"Approving PR #{pr_number} in {merged['owner']}/{merged['repo']}...")
-    response = make_request("POST", api_url, headers, json_data=payload, proxies=proxies, verify=merged["verify_tls"])
+    response = make_request("POST", api_url, headers, json_data=payload, proxies=proxies, verify=merged["verify_tls"], debug=debug)
     
     result = response.json()
     typer.echo(f"✓ Pull Request approved successfully!")
@@ -317,6 +401,7 @@ def comment_command(
     comment_type: str = typer.Option("review", "--type", help="Comment type: 'review' or 'issue'"),
     proxy: Optional[str] = typer.Option(None, "--proxy", "-x", help="SOCKS5h proxy address"),
     verify_tls: bool = typer.Option(True, "--verify-tls/--no-verify-tls", help="Enable/disable TLS verification"),
+    debug: bool = typer.Option(False, "--debug", help="Show API request details and equivalent curl command"),
 ) -> None:
     cfg = load_config(config)
     merged = merge_config_cli(
@@ -354,7 +439,7 @@ def comment_command(
         comment_label = "comment"
     
     typer.echo(f"Adding {comment_label} to PR #{pr_number} in {merged['owner']}/{merged['repo']}...")
-    response = make_request("POST", api_url, headers, json_data=payload, proxies=proxies, verify=merged["verify_tls"])
+    response = make_request("POST", api_url, headers, json_data=payload, proxies=proxies, verify=merged["verify_tls"], debug=debug)
     
     result = response.json()
     typer.echo(f"✓ {comment_label.capitalize()} added successfully!")

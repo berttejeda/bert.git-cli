@@ -3,9 +3,11 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shlex
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlencode
 
 import httpx
 import requests
@@ -13,6 +15,83 @@ import typer
 import yaml
 
 app = typer.Typer(help="GitHub / GitHub Enterprise search CLI tool")
+
+
+def print_debug_info(
+    method: str,
+    url: str,
+    headers: Dict[str, str],
+    params: Optional[Dict[str, Any]] = None,
+    json_data: Optional[Dict[str, Any]] = None,
+    debug: bool = False,
+) -> None:
+    """
+    Print debug information about the API request and generate equivalent curl command.
+    """
+    if not debug:
+        return
+    
+    print("\n" + "=" * 80, file=sys.stderr)
+    print("DEBUG: API Request Details", file=sys.stderr)
+    print("=" * 80, file=sys.stderr)
+    print(f"Method: {method}", file=sys.stderr)
+    print(f"URL: {url}", file=sys.stderr)
+    
+    if params:
+        full_url = f"{url}?{urlencode(params)}"
+        print(f"Full URL: {full_url}", file=sys.stderr)
+    else:
+        full_url = url
+    
+    print("\nHeaders:", file=sys.stderr)
+    sanitized_headers = {}
+    for key, value in headers.items():
+        if key.lower() == "authorization":
+            # Show only first few chars of token for security
+            if value.startswith("Bearer "):
+                token = value[7:]
+                sanitized_value = f"Bearer {token[:8]}..." if len(token) > 8 else value
+            else:
+                sanitized_value = value[:20] + "..." if len(value) > 20 else value
+            print(f"  {key}: {sanitized_value}", file=sys.stderr)
+            sanitized_headers[key] = sanitized_value
+        else:
+            print(f"  {key}: {value}", file=sys.stderr)
+            sanitized_headers[key] = value
+    
+    if json_data:
+        print("\nRequest Body (JSON):", file=sys.stderr)
+        print(json.dumps(json_data, indent=2), file=sys.stderr)
+    
+    if params:
+        print("\nQuery Parameters:", file=sys.stderr)
+        for key, value in params.items():
+            print(f"  {key}: {value}", file=sys.stderr)
+    
+    # Generate curl command
+    print("\n" + "-" * 80, file=sys.stderr)
+    print("Equivalent curl command:", file=sys.stderr)
+    print("-" * 80, file=sys.stderr)
+    
+    curl_parts = ["curl", "-X", method]
+    
+    # Add headers
+    for key, value in headers.items():
+        curl_parts.extend(["-H", f"{key}: {value}"])
+    
+    # Add JSON data
+    if json_data:
+        json_str = json.dumps(json_data)
+        curl_parts.extend(["-d", json_str])
+        curl_parts.append("-H")
+        curl_parts.append("Content-Type: application/json")
+    
+    # Add URL with params
+    curl_parts.append(shlex.quote(full_url))
+    
+    curl_cmd = " \\\n  ".join(curl_parts)
+    print(curl_cmd, file=sys.stderr)
+    print("=" * 80 + "\n", file=sys.stderr)
 
 
 def resolve_auth_token(cli_token: Optional[str], config_token: Optional[str]) -> Optional[str]:
@@ -176,6 +255,7 @@ def search_repositories(
     per_page: int = 50,
     max_pages: int = 3,
     timeout: int = 10,
+    debug: bool = False,
 ) -> Dict[str, Any]:
     url = api_base.rstrip("/") + "/search/repositories"
     items: List[Dict[str, Any]] = []
@@ -184,6 +264,8 @@ def search_repositories(
     session = requests.Session()
     for page in range(1, max_pages + 1):
         params = {"q": query, "per_page": per_page, "page": page}
+        if debug and page == 1:
+            print_debug_info("GET", url, headers, params=params, debug=debug)
         try:
             resp = session.get(url, headers=headers, params=params, timeout=timeout)
         except requests.RequestException as exc:
@@ -300,6 +382,7 @@ async def search_code_async(
     repo: Optional[str] = None,
     language: Optional[str] = None,
     path: Optional[str] = None,
+    debug: bool = False,
 ) -> Dict[str, Any]:
     url = api_base.rstrip("/") + "/search/code"
     final_query = query
@@ -315,6 +398,8 @@ async def search_code_async(
     async with httpx.AsyncClient(timeout=timeout) as client:
         for page in range(1, max_pages + 1):
             params = {"q": final_query, "per_page": per_page, "page": page}
+            if debug and page == 1:
+                print_debug_info("GET", url, headers, params=params, debug=debug)
             try:
                 resp = await client.get(url, headers=headers, params=params)
             except httpx.HTTPError as exc:
@@ -352,6 +437,7 @@ async def search_commits_async(
     repo: Optional[str] = None,
     author: Optional[str] = None,
     committer: Optional[str] = None,
+    debug: bool = False,
 ) -> Dict[str, Any]:
     url = api_base.rstrip("/") + "/search/commits"
     final_query = query
@@ -367,6 +453,8 @@ async def search_commits_async(
     async with httpx.AsyncClient(timeout=timeout) as client:
         for page in range(1, max_pages + 1):
             params = {"q": final_query, "per_page": per_page, "page": page}
+            if debug and page == 1:
+                print_debug_info("GET", url, headers, params=params, debug=debug)
             try:
                 resp = await client.get(url, headers=headers, params=params)
             except httpx.HTTPError as exc:
@@ -572,6 +660,7 @@ def repos_command(
         help="Group results by language",
     ),
     top_n: Optional[int] = typer.Option(None, "--top-n", help="Limit results to top N"),
+    debug: bool = typer.Option(False, "--debug", help="Show API request details and equivalent curl command"),
 ) -> None:
     cfg = load_config(config)
     merged = merge_repos_config_cli(
@@ -599,6 +688,7 @@ def repos_command(
         merged["query"],
         merged["per_page"],
         merged["max_pages"],
+        debug=debug,
     )
     simplified = simplify_repos(raw["items"])
     filtered = apply_filters(simplified, merged["min_stars"], merged["language"])
@@ -628,6 +718,7 @@ def code_command(
     repo: Optional[str] = typer.Option(None, "--repo", help="Repository filter"),
     language: Optional[str] = typer.Option(None, "--language", help="Language filter"),
     path: Optional[str] = typer.Option(None, "--path", help="Path filter"),
+    debug: bool = typer.Option(False, "--debug", help="Show API request details and equivalent curl command"),
 ) -> None:
     cfg = load_config(config)
     merged = merge_code_config_cli(
@@ -652,6 +743,7 @@ def code_command(
             repo=merged["repo"],
             language=merged["language"],
             path=merged["path"],
+            debug=debug,
         )
     )
     simplified = simplify_code_results(raw["items"])
@@ -695,6 +787,7 @@ def commits_command(
     author: Optional[str] = typer.Option(None, "--author", help="Author filter (username or email)"),
     committer: Optional[str] = typer.Option(None, "--committer", help="Committer filter (username or email)"),
     stats: bool = typer.Option(False, "--stats", help="Output repository statistics instead of individual commits"),
+    debug: bool = typer.Option(False, "--debug", help="Show API request details and equivalent curl command"),
 ) -> None:
     cfg = load_config(config)
     merged = merge_commits_config_cli(
@@ -720,6 +813,7 @@ def commits_command(
             repo=merged["repo"],
             author=merged["author"],
             committer=merged["committer"],
+            debug=debug,
         )
     )
     simplified = simplify_commits_results(raw["items"])
