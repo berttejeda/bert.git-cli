@@ -11,6 +11,35 @@ from urllib.parse import urlencode
 import requests
 import typer
 
+# Import version - avoid circular import by importing directly
+try:
+    from importlib.metadata import version, PackageNotFoundError
+except ImportError:
+    try:
+        from importlib_metadata import version, PackageNotFoundError
+    except ImportError:
+        PackageNotFoundError = Exception
+        def version(package_name):
+            raise PackageNotFoundError
+
+try:
+    __version__ = version("bt-ghcli")
+except (PackageNotFoundError, Exception):
+    # Package not installed, fall back to reading from pyproject.toml
+    import re
+    from pathlib import Path
+    
+    pyproject_path = Path(__file__).parent.parent / "pyproject.toml"
+    if pyproject_path.exists():
+        content = pyproject_path.read_text(encoding="utf-8")
+        match = re.search(r'version\s*=\s*["\']([^"\']+)["\']', content)
+        if match:
+            __version__ = match.group(1)
+        else:
+            __version__ = "0.0.0"
+    else:
+        __version__ = "0.0.0"
+
 app = typer.Typer(help="GitHub / GitHub Enterprise Pull Request management CLI tool")
 
 
@@ -456,6 +485,21 @@ def comment_command(
     typer.echo(f"  URL: {result.get('html_url')}")
 
 
+@app.callback(invoke_without_command=True)
+def callback(
+    ctx: typer.Context,
+    version: bool = typer.Option(False, "--version", "-v", help="Show version and exit"),
+) -> None:
+    """GitHub / GitHub Enterprise Pull Request management CLI tool."""
+    if version:
+        typer.echo(f"ghpr version {__version__}")
+        raise typer.Exit()
+    if ctx.invoked_subcommand is None:
+        typer.echo(ctx.get_help())
+        raise typer.Exit()
+
+
 def main() -> None:
+    """Entry point for ghpr CLI."""
     app()
 
